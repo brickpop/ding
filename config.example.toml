@@ -1,0 +1,39 @@
+# Global settings
+ntfy_url = "https://ntfy.your-domain.com"
+topic = "reminders"
+timezone = "Europe/Paris"
+
+# Optional auth token (leave empty if not needed)
+# auth_token = ""
+
+# ── Every day, twice a day ────────────────────────────────────
+[[notifications]]
+title = "Morning coffee"
+message = "Time to brew a fresh cup."
+times = ["07:30"]
+
+[[notifications]]
+title = "Evening wind-down"
+message = "Put the phone away, read a book."
+times = ["21:00"]
+
+# ── Multiple weekdays, single time ────────────────────────────
+[[notifications]]
+title = "Midweek check-in"
+message = "How's your week going?"
+weekdays = ["Monday", "Wednesday", "Friday"]
+times = ["12:00"]
+
+# ── Single weekday ────────────────────────────────────────────
+[[notifications]]
+title = "Water the plants"
+message = "Balcony plants need water."
+weekdays = ["Friday"]
+times = ["21:00"]
+
+# ── Multiple weekdays, multiple times ─────────────────────────
+[[notifications]]
+title = "Trash day"
+message = "Bins out before 7, back after 6."
+weekdays = ["Wednesday", "Saturday"]
+times = ["06:30", "18:30"]
