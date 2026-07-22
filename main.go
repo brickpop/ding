@@ -1,12 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -37,13 +34,7 @@ type Notification struct {
 	Times    []string `toml:"times"`     // optional, plural — merged with time
 }
 
-// ── NTFY payload ──────────────────────────────────────────────
-
-type ntfyPayload struct {
-	Title    string `json:"title"`
-	Message  string `json:"message"`
-	Priority int    `json:"priority,omitempty"`
-}
+// ── NTFY sender (no JSON — ntfy uses headers + plain body) ──
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -150,6 +141,36 @@ func (r *resolvedNotif) isDue(now time.Time, loc *time.Location) (bool, string) 
 
 // ── NTFY sender ───────────────────────────────────────────────
 
+const (
+	maxRetries    = 10
+	retryDelay    = 20 * time.Second
+)
+
+// sendNtfyWithRetry retries sending an ntfy notification up to maxRetries times
+// with a retryDelay between each attempt.
+func sendNtfyWithRetry(cfg *Config, topic, title, message string, dryRun bool) error {
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		err := sendNtfy(cfg, topic, title, message, dryRun)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("  retry succeeded on attempt %d/%d", attempt, maxRetries)
+			}
+			return nil
+		}
+
+		lastErr = err
+		log.Printf("  attempt %d/%d failed: %v", attempt, maxRetries, err)
+
+		if attempt < maxRetries {
+			log.Printf("  retrying in %v...", retryDelay)
+			time.Sleep(retryDelay)
+		}
+	}
+
+	return fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
+}
+
 func sendNtfy(cfg *Config, topic, title, message string, dryRun bool) error {
 	// Use per-notification topic if set, otherwise fall back to global
 	if topic == "" {
@@ -163,28 +184,18 @@ func sendNtfy(cfg *Config, topic, title, message string, dryRun bool) error {
 		return nil
 	}
 
-	payload := ntfyPayload{
-		Title:    title,
-		Message:  message,
-		Priority: 3,
-	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
-	}
-
 	req, err := http.NewRequestWithContext(
 		context.Background(),
 		http.MethodPost,
 		url,
-		bytes.NewReader(body),
+		strings.NewReader(message),
 	)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Title", title)
+	req.Header.Set("Priority", "3")
 	if cfg.AuthToken != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
 	}
@@ -196,10 +207,8 @@ func sendNtfy(cfg *Config, topic, title, message string, dryRun bool) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("ntfy returned %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("ntfy returned %d", resp.StatusCode)
 	}
 
 	log.Printf("  sent (HTTP %d): %s", resp.StatusCode, title)
@@ -235,8 +244,8 @@ func run(cfg *Config, resolved []resolvedNotif, dryRun bool) error {
 			due, matchedTime := r.isDue(now, loc)
 			if due {
 				log.Printf("  %s: DUE (at %s)", r.title, matchedTime)
-				if err := sendNtfy(cfg, r.topic, r.title, r.message, dryRun); err != nil {
-					log.Printf("  ERROR: %v", err)
+				if err := sendNtfyWithRetry(cfg, r.topic, r.title, r.message, dryRun); err != nil {
+					log.Printf("  ERROR (all retries exhausted): %v", err)
 				}
 			}
 		}
