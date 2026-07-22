@@ -146,6 +146,9 @@ const (
 	retryDelay    = 20 * time.Second
 )
 
+// shared HTTP client — reuse to avoid connection/file-descriptor leaks
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
 // sendNtfyWithRetry retries sending an ntfy notification up to maxRetries times
 // with a retryDelay between each attempt.
 func sendNtfyWithRetry(cfg *Config, topic, title, message string, dryRun bool) error {
@@ -200,7 +203,7 @@ func sendNtfy(cfg *Config, topic, title, message string, dryRun bool) error {
 		req.Header.Set("Authorization", "Bearer "+cfg.AuthToken)
 	}
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := httpClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("send notification: %w", err)
