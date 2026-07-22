@@ -30,6 +30,7 @@ type Config struct {
 type Notification struct {
 	Title    string   `toml:"title"`
 	Message  string   `toml:"message"`
+	Topic    string   `toml:"topic"`     // optional — overrides global topic
 	Weekday  string   `toml:"weekday"`   // optional, singular
 	Weekdays []string `toml:"weekdays"`  // optional, plural — merged with weekday
 	Time     string   `toml:"time"`      // optional, singular
@@ -124,6 +125,7 @@ func parseTime(raw string) (h, m int, err error) {
 type resolvedNotif struct {
 	title     string
 	message   string
+	topic     string                // empty = use global topic
 	weekdays  map[time.Weekday]bool // empty = every day
 	times     []struct{ h, m int }
 }
@@ -148,8 +150,13 @@ func (r *resolvedNotif) isDue(now time.Time, loc *time.Location) (bool, string) 
 
 // ── NTFY sender ───────────────────────────────────────────────
 
-func sendNtfy(cfg *Config, title, message string, dryRun bool) error {
-	url := fmt.Sprintf("%s/%s", strings.TrimRight(cfg.NtfyURL, "/"), cfg.Topic)
+func sendNtfy(cfg *Config, topic, title, message string, dryRun bool) error {
+	// Use per-notification topic if set, otherwise fall back to global
+	if topic == "" {
+		topic = cfg.Topic
+	}
+
+	url := fmt.Sprintf("%s/%s", strings.TrimRight(cfg.NtfyURL, "/"), topic)
 
 	if dryRun {
 		log.Printf("[DRY-RUN] POST %s  title=%q message=%q", url, title, message)
@@ -228,7 +235,7 @@ func run(cfg *Config, resolved []resolvedNotif, dryRun bool) error {
 			due, matchedTime := r.isDue(now, loc)
 			if due {
 				log.Printf("  %s: DUE (at %s)", r.title, matchedTime)
-				if err := sendNtfy(cfg, r.title, r.message, dryRun); err != nil {
+				if err := sendNtfy(cfg, r.topic, r.title, r.message, dryRun); err != nil {
 					log.Printf("  ERROR: %v", err)
 				}
 			}
@@ -302,6 +309,7 @@ func main() {
 		resolved = append(resolved, resolvedNotif{
 			title:    n.Title,
 			message:  n.Message,
+			topic:    n.Topic,
 			weekdays: n.collectWeekdays(),
 			times:    parsedTimes,
 		})

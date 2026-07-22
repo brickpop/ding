@@ -404,3 +404,70 @@ func TestConfigNoWeekday(t *testing.T) {
 		t.Error("expected empty weekdays (every day)")
 	}
 }
+
+// ── Per-notification topic override ───────────────────────────
+
+func TestResolvedNotifCarriesTopic(t *testing.T) {
+	n := Notification{
+		Title:   "test",
+		Message: "hello",
+		Topic:   "urgent",
+		Times:   []string{"09:00"},
+	}
+
+	resolved := resolvedNotif{
+		title:    n.Title,
+		message:  n.Message,
+		topic:    n.Topic,
+		weekdays: n.collectWeekdays(),
+		times: []struct{ h, m int }{
+			{9, 0},
+		},
+	}
+
+	if resolved.topic != "urgent" {
+		t.Errorf("resolved topic = %q, want \"urgent\"", resolved.topic)
+	}
+}
+
+func TestResolvedNotifEmptyTopic(t *testing.T) {
+	n := Notification{
+		Title:   "test",
+		Message: "hello",
+		Topic:   "", // no override — should use global
+		Times:   []string{"09:00"},
+	}
+
+	resolved := resolvedNotif{
+		title:    n.Title,
+		message:  n.Message,
+		topic:    n.Topic,
+		weekdays: n.collectWeekdays(),
+		times: []struct{ h, m int }{
+			{9, 0},
+		},
+	}
+
+	if resolved.topic != "" {
+		t.Errorf("resolved topic = %q, want empty (global fallback)", resolved.topic)
+	}
+}
+
+func TestSendNtfyDryRunWithTopicOverride(t *testing.T) {
+	cfg := &Config{
+		NtfyURL: "https://ntfy.example.com",
+		Topic:   "reminders", // global
+	}
+
+	// With per-notification topic override
+	err := sendNtfy(cfg, "urgent", "Fire!", "Building on fire", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// With empty topic (should fall back to global)
+	err = sendNtfy(cfg, "", "Morning coffee", "Time to brew", true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

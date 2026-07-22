@@ -28,6 +28,7 @@ times = ["12:00"]
 [[notifications]]
 title = "Water the plants"
 message = "Balcony plants need water."
+topic = "chores"          # overrides global topic for this notification
 weekdays = ["Friday"]
 times = ["21:00"]
 
